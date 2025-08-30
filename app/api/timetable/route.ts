@@ -19,14 +19,15 @@ export async function GET(req: Request) {
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
-  
+
   if (!schoolName) {
     return new Response(
       JSON.stringify({ error: 'schoolName 쿼리가 필요합니다' }),
       { status: 400, headers: corsHeaders }
     );
   }
- 
+
+  // 학급/시간표 캐시 확인
   if (grade && classNum) {
     cleanupOldCache();
     const cacheKey = getCacheKey(schoolName, grade, classNum);
@@ -42,37 +43,27 @@ export async function GET(req: Request) {
   let browser;
   try {
     browser = await initPlaywright();
+
     const context = await browser.newContext({
       viewport: { width: 1024, height: 768 },
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
     });
+
     const page = await context.newPage();
-    
-    
-    await context.route('**/*.{png,jpg,jpeg,gif,css,woff,woff2}', route => route.abort());
-    page.setDefaultTimeout(5000); 
-    
-    
+
+    // 불필요한 리소스 차단
+    await page.route('**/*.{png,jpg,jpeg,gif,css,woff,woff2}', route => route.abort());
     await page.route('**/*', async (route) => {
-      const resourceType = route.request().resourceType();
-      if (['image', 'stylesheet', 'font'].includes(resourceType)) {
-        await route.abort();
-      } else {
-        await route.continue();
-      }
+      const type = route.request().resourceType();
+      if (['image', 'stylesheet', 'font'].includes(type)) await route.abort();
+      else await route.continue();
     });
 
-    await page.goto('http://comci.net:4082/st', {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000,
-    });
+    await page.goto('http://comci.net:4082/st', { waitUntil: 'domcontentloaded', timeout: 10000 });
 
     await page.type('#sc', schoolName);
     await page.click('input[type="button"][value="검색"]');
-    await page.waitForSelector('#학교명단검색 a', { 
-      timeout: 5000,
-      state: 'visible'
-    });
+    await page.waitForSelector('#학교명단검색 a', { timeout: 5000, state: 'visible' });
 
     const success = await page.evaluate((targetSchool: string) => {
       const rows = Array.from(document.querySelectorAll('#학교명단검색 tr'));
@@ -95,25 +86,18 @@ export async function GET(req: Request) {
     if (!success) {
       return new Response(
         JSON.stringify({ error: '학교를 찾을 수 없습니다.' }),
-        {
-          status: 404,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          },
-        }
+        { status: 404, headers: corsHeaders }
       );
     }
+
     await new Promise(r => setTimeout(r, 400));
 
-    
+    // grade/class 미제공 시 학급 목록 반환
     if (!grade && !classNum) {
       const classes = await page.evaluate(() => {
         const select = document.querySelector('select#ba');
         const options = Array.from(select?.querySelectorAll('option') || []);
         const classCounts: { [key: string]: number } = {};
-
         options.forEach(option => {
           const value = option.getAttribute('value');
           if (value && value.includes('-')) {
@@ -121,32 +105,19 @@ export async function GET(req: Request) {
             classCounts[grade] = (classCounts[grade] || 0) + 1;
           }
         });
-
         return classCounts;
       });
 
       return new Response(
-        JSON.stringify({
-          success: true,
-          mode: 'grade_class',
-          classes,
-        }),
+        JSON.stringify({ success: true, mode: 'grade_class', classes }),
         { status: 200, headers: corsHeaders }
       );
     }
 
-    // 3. 시간표 크롤링 요청 (schoolName, grade, classNum 모두 제공된 경우)
     if (!grade || !classNum) {
       return new Response(
         JSON.stringify({ error: 'grade와 class 쿼리가 필요합니다' }),
-        {
-          status: 400,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          },
-        }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -157,90 +128,53 @@ export async function GET(req: Request) {
     if (cached) {
       return new Response(
         JSON.stringify({ success: true, mode: 'timetable', timetable: cached, cached: true }),
-        {
-          status: 200,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          },
-        }
+        { status: 200, headers: corsHeaders }
       );
     }
 
-    // 학급 선택 최적화
+    // 학급 선택 후 시간표 로드
     const baValue = `${grade}-${classNum}`;
     const selectElement = await page.waitForSelector('select#ba', { timeout: 5000 });
     await selectElement?.selectOption(baValue);
 
-    // ba_change 함수 실행 최적화
     await Promise.all([
-      page.evaluate(() => {
-        if (typeof window.ba_change === 'function') {
-          window.ba_change();
-        }
-      }),
-      page.waitForSelector('#hour table', { 
-        timeout: 5000,
-        state: 'visible'
-      })
+      page.evaluate(() => { if (typeof window.ba_change === 'function') window.ba_change(); }),
+      page.waitForSelector('#hour table', { timeout: 5000, state: 'visible' })
     ]);
 
-    // 시간표 파싱 최적화
     const timetable = await page.evaluate(() => {
       const title = document.querySelector('#hour td[colspan="4"], #hour td[colspan="5"]')?.textContent?.trim() || '시간표';
       const periods = [];
       const rows = Array.from(document.querySelectorAll('#hour table tr')).slice(2);
-      
+
       for (const row of rows) {
         const cells = Array.from(row.querySelectorAll('td'));
         if (cells.length < 6) continue;
 
         const [, period = '', time = ''] = cells[0].textContent?.trim().match(/(\d+)\(([\d:]+)\)/) || [];
-        
-        // 모든 과목 정보를 한 번에 처리
+
         const days = cells.slice(1).map(cell => {
           const [subject = '', teacher = ''] = cell.innerHTML.split('<br>', 2).map(s => s.trim());
-          return {
-            subject,
-            teacher,
-            isChanged: cell.classList.contains('변경')
-          };
+          return { subject, teacher, isChanged: cell.classList.contains('변경') };
         });
 
         periods.push({ period, time, days });
       }
-
       return { title, periods };
     });
-
 
     saveTimetableCache(cacheKey, timetable);
 
     return new Response(
       JSON.stringify({ success: true, mode: 'timetable', timetable, cached: false }),
-      {
-        status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-      }
+      { status: 200, headers: corsHeaders }
     );
 
   } catch (e) {
     console.error(e);
     return new Response(
       JSON.stringify({ error: '크롤링 중 오류 발생', details: String(e) }),
-      {
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-      }
+      { status: 500, headers: corsHeaders }
     );
   } finally {
     if (browser) await browser.close();
