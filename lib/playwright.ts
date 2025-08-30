@@ -1,5 +1,4 @@
 import { chromium } from 'playwright';
-import { execSync } from 'child_process';
 
 const defaultLaunchOptions = {
   headless: true,
