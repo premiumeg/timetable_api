@@ -9,6 +9,7 @@ const defaultLaunchOptions = {
     '--disable-gpu',
     '--disable-extensions',
     '--no-first-run',
+    '--no-sandbox'
   ]
 };
 
