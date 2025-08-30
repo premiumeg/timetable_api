@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p $PORT", 
-    "postinstall": "npx playwright install chromium && npx playwright install-deps chromium",
+    "postinstall": "npx playwright install chromium",
     "lint": "next lint",
     "scrape": "ts-node scraper.ts"
   },
