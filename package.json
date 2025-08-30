@@ -2,14 +2,11 @@
   "name": "comci-scraper",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": ">=22.0.0"
-  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p $PORT", 
-    "postinstall": "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install && npx playwright install-deps chromium",
+    "postinstall": "npx playwright install-deps chromium",
     "lint": "next lint",
     "scrape": "ts-node scraper.ts"
   },
