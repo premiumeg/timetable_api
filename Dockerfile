@@ -14,8 +14,12 @@ RUN apt-get update && apt-get install -y \
     libxcomposite1 \
     libxdamage1 \
     libxext6 \
-    libgobject-2.0-0 \
-    libgio-2.0-0 \
+    libxrandr2 \
+    libxfixes3 \
+    libcups2 \
+    libxss1 \
+    libxcursor1 \
+    libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
