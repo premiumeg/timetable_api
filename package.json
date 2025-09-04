@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p $PORT", 
-    "postinstall": "npx playwright install chromium",
+    "start": "next start",
     "lint": "next lint",
     "scrape": "ts-node scraper.ts"
   },

@@ -1,13 +1,14 @@
 import { chromium } from 'playwright';
+import { execSync } from 'child_process';
 
 const defaultLaunchOptions = {
   headless: true,
+  channel: 'chrome',
   args: [
     '--disable-dev-shm-usage',
     '--disable-gpu',
     '--disable-extensions',
     '--no-first-run',
-    '--no-sandbox'
   ]
 };
 
@@ -20,11 +21,12 @@ export async function initPlaywright() {
     try {
       const browser = await chromium.launch({
         ...defaultLaunchOptions,
+        channel: 'chrome',
       });
       return browser;
     } catch (chromeError) {
-      console.error('Chromium 실행 실패:', chromeError);
-      throw new Error('Chromium을 실행할 수 없습니다.');
+      console.error('Chrome 실행 실패:', chromeError);
+      throw new Error('Chrome 브라우저가 필요합니다. Chrome을 설치해주세요.');
     }
     
     throw error;
