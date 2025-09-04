@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Search, Calendar, MapPin, Clock, User, ArrowLeft } from "lucide-react";
 
 // 타입 정의
@@ -168,6 +168,10 @@ function TimetablePage({
   loadTimetable: (schoolName: string, gradeVal: number, classVal: number) => void;
 }) {
   const days = ["월", "화", "수", "목", "금"];
+
+  if (isLoading) {
+    return <LoadingPage />; // 로딩 상태 표시
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white/70 via-neutral-100/60 to-neutral-200/60 transition-all duration-300">
