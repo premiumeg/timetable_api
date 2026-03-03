@@ -4,6 +4,18 @@ import puppeteer from "puppeteer-core";
 
 export const runtime = "nodejs";
 
+interface DayData {
+  subject: string;
+  teacher: string;
+  isChanged: boolean;
+}
+
+interface PeriodData {
+  period: string;
+  time: string;
+  days: DayData[];
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const schoolName = url.searchParams.get("schoolName");
@@ -26,7 +38,6 @@ export async function GET(req: NextRequest) {
   let browser;
 
   try {
-    // 🔥 Vercel 서버리스용 Chromium 실행
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
@@ -37,11 +48,7 @@ export async function GET(req: NextRequest) {
     const page = await browser.newPage();
 
     await page.setViewport({ width: 1024, height: 768 });
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-    );
 
-    // 🚀 리소스 차단 (속도 최적화)
     await page.setRequestInterception(true);
     page.on("request", (request) => {
       const type = request.resourceType();
@@ -61,7 +68,6 @@ export async function GET(req: NextRequest) {
     await page.click('input[type="button"][value="검색"]');
     await page.waitForSelector("#학교명단검색 a", { timeout: 10000 });
 
-    // 학교 선택
     const success = await page.evaluate((targetSchool: string) => {
       const rows = Array.from(document.querySelectorAll("#학교명단검색 tr"));
 
@@ -72,9 +78,8 @@ export async function GET(req: NextRequest) {
 
         if (name.includes(targetSchool)) {
           const match = onclick.match(/sc_disp\((\d+)\)/);
-          if (match) {
-            // @ts-ignore
-            window.sc_disp(Number(match[1]));
+          if (match && typeof (window as any).sc_disp === "function") {
+            (window as any).sc_disp(Number(match[1]));
             return true;
           }
         }
@@ -91,18 +96,18 @@ export async function GET(req: NextRequest) {
 
     await new Promise((r) => setTimeout(r, 500));
 
-    // 🔥 반 목록만 요청
     if (!grade && !classNum) {
       const classes = await page.evaluate(() => {
         const select = document.querySelector("select#ba");
         const options = Array.from(select?.querySelectorAll("option") || []);
-        const classCounts: { [key: string]: number } = {};
+        const classCounts: Record<string, number> = {};
 
         options.forEach((option) => {
           const value = option.getAttribute("value");
           if (value && value.includes("-")) {
-            const [grade] = value.split("-");
-            classCounts[grade] = (classCounts[grade] || 0) + 1;
+            const [gradeValue] = value.split("-");
+            classCounts[gradeValue] =
+              (classCounts[gradeValue] || 0) + 1;
           }
         });
 
@@ -127,14 +132,11 @@ export async function GET(req: NextRequest) {
     }
 
     const baValue = `${grade}-${classNum}`;
-
     await page.select("select#ba", baValue);
 
     await page.evaluate(() => {
-      // @ts-ignore
-      if (typeof window.ba_change === "function") {
-        // @ts-ignore
-        window.ba_change();
+      if (typeof (window as any).ba_change === "function") {
+        (window as any).ba_change();
       }
     });
 
@@ -146,7 +148,7 @@ export async function GET(req: NextRequest) {
           .querySelector('#hour td[colspan="4"], #hour td[colspan="5"]')
           ?.textContent?.trim() || "시간표";
 
-      const periods: any[] = [];
+      const periods: PeriodData[] = [];
       const rows = Array.from(
         document.querySelectorAll("#hour table tr")
       ).slice(2);
@@ -161,14 +163,11 @@ export async function GET(req: NextRequest) {
         const period = match?.[1] || "";
         const time = match?.[2] || "";
 
-        const days = cells.slice(1).map((cell) => {
+        const days: DayData[] = cells.slice(1).map((cell) => {
           const html = cell.innerHTML.split("<br>");
-          const subject = html[0]?.trim() || "";
-          const teacher = html[1]?.trim() || "";
-
           return {
-            subject,
-            teacher,
+            subject: html[0]?.trim() || "",
+            teacher: html[1]?.trim() || "",
             isChanged: cell.classList.contains("변경"),
           };
         });
@@ -184,12 +183,10 @@ export async function GET(req: NextRequest) {
         success: true,
         mode: "timetable",
         timetable,
-        cached: false,
       }),
       { status: 200, headers: corsHeaders }
     );
   } catch (e) {
-    console.error(e);
     return new Response(
       JSON.stringify({ error: "크롤링 중 오류 발생", details: String(e) }),
       { status: 500, headers: corsHeaders }
